@@ -9,11 +9,10 @@ if (NOT DEFINED GRAPH_COMPILER_LIBS)
     if (NOT GraphCompiler_FOUND)
         include(FetchContent)
 
-        #FIXME: Replace the repository URL with the https://github.com/intel/graph-compiler
         FetchContent_Declare(
                 GC
-                GIT_REPOSITORY https://github.com/AndreyPavlenko/graph-compiler.git
-                GIT_TAG pkg
+                GIT_REPOSITORY https://github.com/intel/graph-compiler.git
+                GIT_TAG main
                 FIND_PACKAGE_ARGS NAMES GraphCompiler
         )
 
