@@ -81,13 +81,19 @@ void prepareMLIRKernelWithoutWrapper(mlir::OwningOpRef<mlir::ModuleOp>& module, 
         }
 #endif
 #ifdef GRAPH_COMPILER
-        case ov::mlir::MLIR_MODE_GC: {
+        case ov::mlir::MLIR_MODE_GC_CPU: {
             gc::populateCPUPipeline(pm);
+            break;
+        }
+        case ov::mlir::MLIR_MODE_GC_GPU: {
+            // It's expected that the buffers are allocated in GPU
+            pm.addPass(gc::createAddRemoveGpuAddressSpace({false}));
+            gc::populateGPUPipeline(pm);
             break;
         }
 #endif
         default: {
-            assert(ov::mlir::MLIR_MODE_DEFAULT);
+            assert(mode == ov::mlir::MLIR_MODE_DEFAULT);
             // Cleanup before bufferization.
             // Simplifies IR to allow better bufferization.
             pm.addNestedPass<func::FuncOp>(createCanonicalizerPass());
@@ -167,7 +173,12 @@ std::unique_ptr<llvm::Module> lowerToLLVMIR(Operation* module, llvm::LLVMContext
     std::string triple = "x86_64-linux-gnu";
     std::string cpuName = "alderlake";  // sapphirerapids, nehalem, etc.
     std::string fpuName = "avx2";       //  sse4.2, avx, avx2, avx512bf16, etc.
-    bool printLLVM = false;
+    bool printLLVM;
+#ifdef _NDEBUG
+    printLLVM = false;
+#else
+    printLLVM = true;
+#endif
     auto codeGenOpt = 2;
 
     // Specify target machine
@@ -225,13 +236,26 @@ std::unique_ptr<llvm::Module> lowerToLLVMIR(Operation* module, llvm::LLVMContext
 struct MemRefDescriptor {
     MemRefDescriptor() = default;
 
-    MemRefDescriptor    (ov::Tensor tensor)
-        : allocated(tensor.data()),
-          aligned(tensor.data()),
-          offset(0),
-          shape(tensor.get_shape().begin(), tensor.get_shape().end()) {
-        strides.resize(tensor.get_shape().size());
-        const auto& byte_strides = tensor.get_strides();
+    MemRefDescriptor(ov::Tensor tensor, ov::Shape module_input_shape)
+            : allocated(tensor.data()),
+              aligned(tensor.data()),
+              offset(0),
+              shape(module_input_shape.begin(), module_input_shape.end()) {
+        if (shape.size() != tensor.get_shape().size()) {
+            // validate that the shape difference is due to trailing '1's
+            for (size_t i = 0; i < shape.size(); ++i) {
+                if (shape[i] != tensor.get_shape()[i]) {
+                    throw std::runtime_error("Mismatch in shape sizes");
+                }
+            }
+            for (size_t i = shape.size(); i < tensor.get_shape().size(); ++i) {
+                if (tensor.get_shape()[i] != 1) {
+                    throw std::runtime_error("Mismatch in shape sizes");
+                }
+            }
+        }
+        strides.resize(shape.size());
+        const auto &byte_strides = tensor.get_strides();
         auto element_size = tensor.get_element_type().size();
         for (size_t i = 0; i < strides.size(); ++i) {
             assert(byte_strides[i] % element_size == 0);
@@ -240,6 +264,9 @@ struct MemRefDescriptor {
             //std::cerr << "stride [" << i << "] = " << strides[i] << "\n";
         }
     }
+
+    MemRefDescriptor(ov::Tensor tensor)
+            : MemRefDescriptor(tensor, tensor.get_shape()) {}
 
     void* allocated;
     void* aligned;
@@ -335,7 +362,8 @@ NodePtr MLIROp::clone_with_new_inputs(const ov::OutputVector& new_args) const {
 bool MLIROp::evaluate(ov::TensorVector& outputs, const ov::TensorVector& inputs) const {
     std::vector<MemRefDescriptor> memref_args;
     for (size_t i = 0; i < inputs.size(); ++i) {
-        memref_args.push_back(MemRefDescriptor(inputs[i]));
+        auto initial_shape = get_input_shape(i);
+        memref_args.push_back(MemRefDescriptor(inputs[i], initial_shape));
     }
     for (size_t i = 0; i < outputs.size(); ++i) {
         // TODO: Optimize by adding all dimensions to dimensions_map, not only dynamic

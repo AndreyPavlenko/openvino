@@ -8,6 +8,11 @@
 #include "intel_gpu/plugin/program_builder.hpp"
 #include "intel_gpu/primitives/generic_primitive.hpp"
 
+#ifdef GRAPH_COMPILER
+#include "runtime/ocl/ocl_stream.hpp"
+#include "gc/ExecutionEngine/OpenCLRuntime/OpenCLRuntimeWrappers.h"
+#endif
+
 namespace ov {
 namespace op {
 namespace mlir {
@@ -45,8 +50,22 @@ void CreateMLIRSubgraphOp(ProgramBuilder& p, const std::shared_ptr<ov::op::mlir:
         for (size_t i = 0; i < outputs.size(); i++)
             output_host_tensors.push_back(make_tensor(outputs[i]->get_layout(), outputs[i]->lock(stream, cldnn::mem_lock_type::write)));
 
+#ifdef GRAPH_COMPILER
+        cl_command_queue queue = nullptr;
+        if (auto ocl_stream = dynamic_cast<cldnn::ocl::ocl_stream*>(&stream)) {
+            queue = ocl_stream->get_cl_queue().get();
+            gpuSetThreadLocalQueue(queue);
+        }
+#endif
+
         OPENVINO_ASSERT(op->evaluate(output_host_tensors, input_host_tensors),
                         "[GPU] Couldn't execute MLIROp ", op->get_friendly_name());
+
+#ifdef GRAPH_COMPILER
+        if (queue) {
+            gpuSetThreadLocalQueue(nullptr);
+        }
+#endif
 
         for (size_t i = 0; i < inputs.size(); i++)
             inputs[i]->unlock(stream);

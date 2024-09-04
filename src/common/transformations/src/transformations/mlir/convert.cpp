@@ -335,8 +335,8 @@ MLIRContext* get_shared_mlir_context(MlirMode mode) {
     }
 
 #ifdef GRAPH_COMPILER
-    if (mode == MLIR_MODE_GC) {
-        OPENVINO_MLIR_DEBUG_PRINT("GC\n");
+    if ((mode == MLIR_MODE_GC_CPU) || mode == MLIR_MODE_GC_GPU) {
+        OPENVINO_MLIR_DEBUG_PRINT((mode == MLIR_MODE_GC_CPU) ? "GC_CPU\n" : "GC_GPU\n");
         context = std::make_shared<MLIRContext>(gc::initCompilerAndGetDialects());
     } else {
 #endif
@@ -414,13 +414,13 @@ void ov::pass::transformMLIR(std::shared_ptr<ov::Model> model) {
                 "but OV_MLIR_MODE environment variable is set to TPP.");
 #endif
             mode = MLIR_MODE_TPP;
-        } else if (mode_str == "GC") {
+        } else if (mode_str.find("GC", 0) == 0) {
 #ifndef GRAPH_COMPILER
             OPENVINO_THROW(
                 "[ ERROR ] OpenVINO wasn't compiled with GRAPH_COMPILER support, "
                 "but OV_MLIR_MODE environment variable is set to GC.");
 #endif
-            mode = MLIR_MODE_GC;
+            mode = (mode_str == "GC_GPU") ? MLIR_MODE_GC_GPU : MLIR_MODE_GC_CPU;
         } else {
             OPENVINO_ASSERT(mode_str == "DEFAULT");
             mode = MLIR_MODE_DEFAULT;

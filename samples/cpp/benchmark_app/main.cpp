@@ -1076,10 +1076,34 @@ int main(int argc, char* argv[]) {
             }
         }
 
+        // Fill outputs with 0
+        if (!useGpuMem) {
+            for (auto &output: compiledModel.outputs()) {
+                auto tensor = inferRequest->get_tensor(output.get_any_name());
+                std::fill_n((char *) tensor.data(), tensor.get_byte_size(), 0);
+            }
+        }
+
         if (FLAGS_api == "sync") {
             inferRequest->infer();
         } else {
             inferRequest->start_async();
+        }
+
+        inferRequestsQueue.wait_all();
+
+        // Save the outputs to files
+        if (!useGpuMem) {
+            for (auto &output: compiledModel.outputs()) {
+                auto out_name = output.get_any_name();
+                std::ofstream output_file(out_name, std::ios::binary);
+                auto tensor = inferRequest->get_tensor(out_name);
+                slog::info << "Writing output to " << out_name << slog::endl;
+                auto values = (int *) tensor.data();
+                for (int i = 0; i < 1024; i++) std::cout << values[i];
+                output_file.write((char *) tensor.data(), tensor.get_byte_size());
+                output_file.close();
+            }
         }
 
         inferRequestsQueue.wait_all();

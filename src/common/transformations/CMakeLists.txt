@@ -43,6 +43,7 @@ target_include_directories(${TARGET_NAME}_obj PRIVATE "${PUBLIC_HEADERS_DIR}"
                                                       "${MLIR_INCLUDE_DIRS}"
                                                       "${LLVM_INCLUDE_DIRS}"
                                                       "${GRAPH_COMPILER_INCLUDES}")
+target_compile_options(${TARGET_NAME}_obj PUBLIC ${GRAPH_COMPILER_COMPILE_OPTIONS})
 
 add_tpp_mlir_includes(${TARGET_NAME}_obj)
 

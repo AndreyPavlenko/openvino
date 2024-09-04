@@ -25,7 +25,8 @@ using ::mlir::ModuleOp;
 
 enum MlirMode {
     MLIR_MODE_TPP,
-    MLIR_MODE_GC,
+    MLIR_MODE_GC_CPU,
+    MLIR_MODE_GC_GPU,
     MLIR_MODE_DEFAULT,
 };
 
